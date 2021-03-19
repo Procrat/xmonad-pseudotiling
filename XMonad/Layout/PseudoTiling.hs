@@ -2,7 +2,6 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE InstanceSigs          #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NamedFieldPuns        #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 
@@ -53,18 +52,22 @@ instance LM.LayoutModifier PseudoTiling Window where
                                   Maybe (layout Window)),
                                  Maybe (PseudoTiling Window))
     modifyLayoutWithUpdate pseudoTiler workspace screenRectangle = do
-        let visibleWindows = Set.fromList . W.integrate' $ W.stack workspace
-        newPreferredDimensions <- foldM insertIfNew (preferredDimensions pseudoTiler) visibleWindows
+        let PseudoTiling oldDimensions pseudoWindows = pseudoTiler
+        let windows = W.integrate' $ W.stack workspace
+        newDimensions <- foldM (findDimensions oldDimensions) Map.empty windows
+        let newPseudoWindows = Set.intersection pseudoWindows (Map.keysSet newDimensions)
         layout <- runLayout workspace screenRectangle
-        return (layout, Just pseudoTiler{preferredDimensions = newPreferredDimensions})
+        return (layout, Just (PseudoTiling newDimensions newPseudoWindows))
       where
-        insertIfNew :: Map Window Dimensions -> Window -> X (Map Window Dimensions)
-        insertIfNew preferredDimensions window =
-            if window `Map.notMember` preferredDimensions
-            then do size <- getPreferredDimensions window
-                    return $ Map.insert window size preferredDimensions
-            else return preferredDimensions
-
+        findDimensions :: Map Window Dimensions
+                       -> Map Window Dimensions
+                       -> Window
+                       -> X (Map Window Dimensions)
+        findDimensions oldDimensions newDimensions window = do
+            dimensions <- case Map.lookup window oldDimensions of
+                            Just dimensions -> return dimensions
+                            Nothing         -> getPreferredDimensions window
+            return $ Map.insert window dimensions newDimensions
 
     pureModifier :: PseudoTiling Window
                  -> Rectangle
