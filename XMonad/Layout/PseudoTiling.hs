@@ -19,8 +19,7 @@ import qualified Data.Map.Strict              as Map
 import           Data.Set                     (Set)
 import qualified Data.Set                     as Set
 
-import           Graphics.X11                 (Rectangle (..))
-import           XMonad                       hiding (windows)
+import           XMonad                       hiding (display, windows)
 import qualified XMonad.Layout.LayoutModifier as LM
 import qualified XMonad.StackSet              as W
 import           XMonad.Util.XUtils           (fi)
@@ -52,10 +51,10 @@ instance LM.LayoutModifier PseudoTiling Window where
                                   Maybe (layout Window)),
                                  Maybe (PseudoTiling Window))
     modifyLayoutWithUpdate pseudoTiler workspace screenRectangle = do
-        let PseudoTiling oldDimensions pseudoWindows = pseudoTiler
+        let PseudoTiling oldDimensions oldPseudoWindows = pseudoTiler
         let windows = W.integrate' $ W.stack workspace
         newDimensions <- foldM (findDimensions oldDimensions) Map.empty windows
-        let newPseudoWindows = Set.intersection pseudoWindows (Map.keysSet newDimensions)
+        let newPseudoWindows = Set.intersection oldPseudoWindows (Map.keysSet newDimensions)
         layout <- runLayout workspace screenRectangle
         return (layout, Just (PseudoTiling newDimensions newPseudoWindows))
       where
