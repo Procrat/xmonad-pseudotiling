@@ -9,11 +9,10 @@
 module XMonad.Layout.PseudoTiling (
     pseudoTiling,
     doPseudoTile,
-    PseudoTilingMessage (..),
+    PseudoTilingMessage(..),
 ) where
 
 
-import           Control.Monad                (foldM)
 import           Data.Map.Strict              (Map)
 import qualified Data.Map.Strict              as Map
 import           Data.Set                     (Set)
@@ -35,7 +34,7 @@ data PseudoTiling window = PseudoTiling
 deriving instance Show window => Show (PseudoTiling window)
 
 
-data PseudoTilingMessage = ToggleFocusedWindow
+data PseudoTilingMessage = SetWindow Window
                          | ToggleWindow Window
     deriving Typeable
 
@@ -43,64 +42,48 @@ instance Message PseudoTilingMessage
 
 
 instance LM.LayoutModifier PseudoTiling Window where
-    modifyLayoutWithUpdate :: LayoutClass layout Window
-                           => PseudoTiling Window
-                           -> W.Workspace WorkspaceId (layout Window) Window
-                           -> Rectangle
-                           -> X (([(Window, Rectangle)],
-                                  Maybe (layout Window)),
-                                 Maybe (PseudoTiling Window))
-    modifyLayoutWithUpdate pseudoTiler workspace screenRectangle = do
-        let PseudoTiling oldDimensions oldPseudoWindows = pseudoTiler
-        let windows = W.integrate' $ W.stack workspace
-        newDimensions <- foldM (findDimensions oldDimensions) Map.empty windows
-        let newPseudoWindows = Set.intersection oldPseudoWindows (Map.keysSet newDimensions)
-        layout <- runLayout workspace screenRectangle
-        return (layout, Just (PseudoTiling newDimensions newPseudoWindows))
-      where
-        findDimensions :: Map Window Dimensions
-                       -> Map Window Dimensions
-                       -> Window
-                       -> X (Map Window Dimensions)
-        findDimensions oldDimensions newDimensions window = do
-            dimensions <- case Map.lookup window oldDimensions of
-                            Just dimensions -> return dimensions
-                            Nothing         -> getPreferredDimensions window
-            return $ Map.insert window dimensions newDimensions
-
     pureModifier :: PseudoTiling Window
                  -> Rectangle
                  -> Maybe (W.Stack Window)
                  -> [(Window, Rectangle)]
                  -> ([(Window, Rectangle)], Maybe (PseudoTiling Window))
     pureModifier (PseudoTiling dimensions windows) _ _ windowRectangles =
-        let newWindowRectangles = for windowRectangles $ \(window, rectangle) ->
-                case Map.lookup window dimensions of
-                    Nothing -> (window, rectangle)
-                    Just preferredDimension ->
-                        if Set.member window windows
-                        then pseudoTile preferredDimension (window, rectangle)
-                        else (window, rectangle)
-         in (newWindowRectangles, Nothing)
-
+        let newWindowRectangles =
+                for windowRectangles $ \(window, rectangle) ->
+                -- SAFETY: The preferred dimensions for any window gets
+                -- calculated when it first gets mapped, so it should exist.
+                let preferredDimension = dimensions Map.! window
+                    newRectangle = if Set.member window windows
+                    then pseudoTileDimension preferredDimension rectangle
+                    else rectangle
+                in (window, newRectangle)
+        in (newWindowRectangles, Nothing)
 
     handleMess :: PseudoTiling Window
                -> SomeMessage
                -> X (Maybe (PseudoTiling Window))
-    handleMess pseudoTiler message
+    handleMess pseudoTiler@(PseudoTiling dimensions windows) message
+        | Just MapRequestEvent { ev_window = window } <- fromMessage message = do
+            dimensionsForWindow <- getPreferredDimensions window
+            let newDimensions = Map.insert window dimensionsForWindow dimensions
+            return . Just $ pseudoTiler{ preferredDimensions = newDimensions }
+        | Just (SetWindow window) <- fromMessage message =
+            return . Just $ pseudoTiler{
+                pseudoWindows = Set.insert window windows
+            }
         | Just (ToggleWindow window) <- fromMessage message =
-            return . Just $ toggle window
-        | Just ToggleFocusedWindow <- fromMessage message =
-            withWindowSet $ return . fmap toggle . W.peek
+            return . Just $ pseudoTiler{
+                pseudoWindows = toggleMember window windows
+            }
+        | Just DestroyWindowEvent { ev_window = window } <- fromMessage message =
+            return . Just $ pseudoTiler{
+                preferredDimensions = Map.delete window dimensions,
+                pseudoWindows = Set.delete window windows
+            }
       where
-        toggle :: Window -> PseudoTiling Window
-        toggle currentWindow = pseudoTiler{
-            pseudoWindows = toggleMember currentWindow (pseudoWindows pseudoTiler)
-          }
-          where
-            toggleMember el set = if Set.member el set
-              then Set.delete el set
-              else Set.insert el set
+        toggleMember el set = if Set.member el set
+            then Set.delete el set
+            else Set.insert el set
     handleMess _ _ = return Nothing
 
 
@@ -117,16 +100,16 @@ getPreferredDimensions window = withDisplay $ \display -> do
     return (fi preferredWidth, fi preferredHeight)
 
 
-pseudoTile :: Dimensions -> (Window, Rectangle) -> (Window, Rectangle)
-pseudoTile (wPreferred, hPreferred) (window, rectangleBefore) =
-    let (Rectangle xBefore yBefore wBefore hBefore) = rectangleBefore
+pseudoTileDimension :: Dimensions -> Rectangle -> Rectangle
+pseudoTileDimension (wPreferred, hPreferred) rectangleBefore =
+    let Rectangle xBefore yBefore wBefore hBefore = rectangleBefore
         -- don't extend beyond the underlying layout's allocated space
         w = min wPreferred wBefore
         h = min hPreferred hBefore
         -- center
         x = xBefore + fi (wBefore `div` 2) - fi (w `div` 2)
         y = yBefore + fi (hBefore `div` 2) - fi (h `div` 2)
-     in (window, rectangleBefore { rect_x = x, rect_y = y, rect_width = w, rect_height = h })
+    in Rectangle x y w h
 
 
 for :: Functor f => f a -> (a -> b) -> f b
@@ -136,5 +119,5 @@ for = flip fmap
 doPseudoTile :: ManageHook
 doPseudoTile = do
     window <- ask
-    liftX $ broadcastMessage $ ToggleWindow window
+    liftX . broadcastMessage $ SetWindow window
     idHook
