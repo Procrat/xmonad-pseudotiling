@@ -87,10 +87,20 @@ instance LM.LayoutModifier PseudoTiling Window where
     handleMess _ _ = return Nothing
 
 
--------------------------------------------------------------------------------
+-- Public API -----------------------------------------------------------------
+
 pseudoTiling :: layout window -> LM.ModifiedLayout PseudoTiling layout window
 pseudoTiling = LM.ModifiedLayout (PseudoTiling Map.empty Set.empty)
 
+
+doPseudoTile :: ManageHook
+doPseudoTile = do
+    window <- ask
+    liftX . broadcastMessage $ SetWindow window
+    idHook
+
+
+-- Helper functions -----------------------------------------------------------
 
 getPreferredDimensions :: Window -> X Dimensions
 getPreferredDimensions window = withDisplay $ \display -> do
@@ -114,10 +124,3 @@ pseudoTileDimension (wPreferred, hPreferred) rectangleBefore =
 
 for :: Functor f => f a -> (a -> b) -> f b
 for = flip fmap
-
-
-doPseudoTile :: ManageHook
-doPseudoTile = do
-    window <- ask
-    liftX . broadcastMessage $ SetWindow window
-    idHook

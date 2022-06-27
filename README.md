@@ -77,15 +77,15 @@ manageHook = composeAll
 #### Pseudotile on demand
 
 To have windows only pseudotile when you explicitly ask it to, send the message
-`ToggleFocusedWindow`, or, for more advanced usages, send `ToggleWindow` with a
-given window.
+`SetWindow` or `ToggleWindow` with a given window.
 
-(This example uses
-[XMonad.Util.EZConfig](http://xmonad.org/xmonad-docs/xmonad-contrib/XMonad-Util-EZConfig.html)-style
-key bindings, but that's not really relevant.)
+For example, to make the binding `Mod+Shift+P` toggle the pseudotiling status of
+the window in focus (using
+[EZConfig](http://xmonad.org/xmonad-docs/xmonad-contrib/XMonad-Util-EZConfig.html)-style
+bindings):
 ```haskell
     ...
-    , ("M-S-p", sendMessage PseudoTiling.ToggleFocusedWindow)
+    , ("M-S-p", withFocused $ sendMessage . PseudoTiling.ToggleWindow)
     ...
 ```
 
@@ -97,7 +97,7 @@ self-explanatory. If they are not, feel free to tell me so.
 ```haskell
 pseudoTiling :: layout a -> ModifiedLayout PseudoTiling layout a
 doPseudoTile :: ManageHook
-data PseudoTilingMessage = ToggleFocusedWindow | ToggleWindow Window
+data PseudoTilingMessage = SetWindow Window | ToggleWindow Window
 ```
 
 
