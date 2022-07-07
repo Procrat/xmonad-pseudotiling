@@ -33,7 +33,11 @@ import           XMonad.Layout.PseudoTiling     (doPseudoTile, pseudoTiling)
 `pseudoTiling` is the name of the layout modifier where the magic happens. Add
 it to your layout hook:
 ```haskell
-layout = pseudoTiling $ tiled ||| Mirror tiled ||| Full
+main = xmonad $ def {
+    layoutHook = myLayouts
+}
+
+myLayouts = pseudoTiling $ tiled ||| Mirror tiled ||| Full
   where tiled = Tall 1 3/100 1/2
 ```
 
@@ -41,36 +45,45 @@ I personally like to use this in combination with the fantastic
 [XMonad.Layout.LayoutHints](https://hackage.haskell.org/package/xmonad-contrib-0.13/docs/XMonad-Layout-LayoutHints.html)
 module:
 ```haskell
-layout = modifiers layouts
+myLayouts = modifiers layouts
   where
     modifiers = layoutHintsWithPlacement (0.5, 0.5) . pseudoTiling
     layouts = tiled ||| Mirror tiled ||| Full
     tiled = Tall 1 3/100 1/2
 ```
 
+To be able to know what size to pseudotile windows to, we also need to hook into
+some X events, so add the pseudotiling event hook as well:
+```haskell
+main = xmonad $ def {
+    layoutHook      = myLayouts
+    handleEventHook = PseudoTiling.eventHook <+> handleEventHook def
+}
+```
+
 This by itself won't have any effect. It allows you to pseudotile windows, but
-it doesn't decide on **when** to do that. You have two options, which work
-perfectly when combined as well.
+it doesn't decide on **when** to do that. You have two options, which you can
+perfectly combine as well.
 
 #### Pseudotile new windows
 
 To have new windows be pseudotiled automatically, add `doPseudoTile` to your
 manage hook:
 ```haskell
-manageHook :: ManageHook
-manageHook = composeAll
-    [ ...
-    , doPseudoTile
-    ]
+main = xmonad $ def {
+    layoutHook      = myLayouts
+    handleEventHook = PseudoTiling.eventHook <+> handleEventHook def
+    manageHook      = myManageHook <+> manageHook def
+}
+
+myManageHook :: ManageHook
+myManageHook = doPseudoTile
 ```
 
-You can also choose to have only certain applications pseudotiled, e.g.
+You can also choose to have only certain applications pseudotiled, e.g. URxvt
 ```haskell
-manageHook :: ManageHook
-manageHook = composeAll
-    [ ...
-    , className =? "urxvt" --> doPseudoTile
-    ]
+myManageHook :: ManageHook
+myManageHook = className =? "urxvt" --> doPseudoTile
 ```
 
 
@@ -96,6 +109,7 @@ I think the combinations of function names and types are pretty
 self-explanatory. If they are not, feel free to tell me so.
 ```haskell
 pseudoTiling :: layout a -> ModifiedLayout PseudoTiling layout a
+eventHook :: Event -> X All
 doPseudoTile :: ManageHook
 data PseudoTilingMessage = SetWindow Window | ToggleWindow Window
 ```
